@@ -1,0 +1,38 @@
+Syntax definition of BASIC 2026
+wrc
+
+program := prog_line { prog_line} EOF.
+prog_line := [label] statement { : statement } newline.
+label := 
+statement := let_st |
+             if_st |
+						 goto_st |
+						 gosub_st |
+						 return_st |
+						 for_st |
+						 next_st |
+						 input_st |
+						 print_st |
+						 dim_st | 
+						 end_st .
+let_st := LET ref = exp .
+if_st := IF exp THEN statement [ ELSE statement].
+goto_st := GOTO label .
+gosub_st := GOSUB label.
+return_st := RETURN.
+for_st := FOR ref = exp TO exp [STEP exp].
+next_st := NEXT [ref].
+input_st := INPUT [string] ref.
+print_st := PRINT [explist].
+dim_st := DIM var[dimlist].
+end_st := END.
+
+label := integer(1 to ...).
+ref  :=var[dimlist].
+dimlist := ( exp [,exp]).
+string := " {char}".
+explist [exp { (, | ;) exp} ].
+
+exp := or_exp.
+or_exp := and_exp { OR and_exp }.
+and_exp := ...
