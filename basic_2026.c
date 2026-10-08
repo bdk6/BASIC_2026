@@ -160,6 +160,7 @@ keyword_t keyword_list[] =
 	{TOK_PRINT, "PRINT"},
 	{TOK_INPUT, "INPUT"},
 	{TOK_END, "END"},
+	{TOK_REM, "REM"},
 
 	{TOK_AND, "AND"},
 	{TOK_OR, "OR"},
@@ -254,6 +255,14 @@ error_t scan(token_t* tok);
 error_t value_push(value_t v)
 {
 	error_t rtn = ERR_NONE;
+	if(val_sp >= MAX_VALUE_STACK)
+	{
+		rtn = ERR_VALUE_STACK_OVERFLOW;
+	}
+	else
+	{
+		value_stack[val_sp++] = v;
+	}
 	return rtn;
 }
 /////////////////////////////////////////////////////////////////
@@ -323,6 +332,19 @@ error_t value_pop(value_t* v)
 	return rtn;
 }
 
+/////////////////////////////////////////////////////////////////
+/// @fn string
+/// @brief Parse and eval a function call.
+/// @param[in,out] tok The current token.
+/// @return Error code
+/////////////////////////////////////////////////////////////////
+error_t match_types(value_t* lt, value_t* rt)
+{
+	error_t rtn = ERR_NONE;
+
+
+	return rtn;
+}
 /////////////////////////////////////////////////////////////////
 /// @fn string
 /// @brief Parse and eval a function call.
@@ -435,6 +457,47 @@ error_t mul_exp(token_t* tok)
 	// mul_exp := factor { (* | / | %) factor} .
 	error_t rtn = ERR_NONE;
 	rtn = factor(tok);
+	while(tok->typ == TOK_STAR || tok->typ == TOK_SLASH || tok->typ == TOK_PERCENT)
+	{
+		token_typ_t op = tok->typ;
+		scan(tok);
+		rtn = factor(tok);
+		value_t rt;
+		value_t lt;
+		value_pop(&rt);
+		value_pop(&lt);
+		match_types(&lt, &rt);
+		switch(lt.tag)
+		{
+			case TYPE_INTEGER:
+			  if(op == TOK_STAR)
+				{
+					lt.i *= rt.i;
+				}
+				else if(op == TOK_SLASH)
+				{
+					lt.i /= rt.i;
+				}
+				else if(op == TOK_PERCENT)
+				{
+					lt.i %= rt.i;
+				}
+				break;
+			case TYPE_FLOAT:
+			  printf("MUL: float not yet supported\n");
+				break;
+			case TYPE_STRING:
+			  printf("MUL: strings not supported (yet)\n");
+
+			default:
+			  printf("MUL, unknown types\n");
+				break;
+		}
+		//lt.i = lt.i * rt.i;
+		printf("mul = %d\n", lt.i);
+		value_push(lt);
+
+	}
 
 	return rtn;
 }
@@ -666,6 +729,8 @@ error_t scan(token_t* tok)
 	tok->str[cnt++] = c;
 	tok->location = code_ptr - 1;
 
+	tok->typ = (token_typ_t) c;
+
 	//printf("scan: c is %d, %02x\n", c, c & 0xff);
 	if(c == '\n' || c == '\r')
 	{ printf("newline\n");
@@ -787,52 +852,52 @@ error_t scan(token_t* tok)
 	// default
 	else
 	{
-		switch(c)
-		{
-			case ':':
-			  tok->typ = TOK_COLON;
-				break;
-				case ';':
-				tok->typ = TOK_SEMI;
-				break;
-				case ',':
-				tok->typ = TOK_COMMA;
-				break;
-				case '-':
-				tok->typ = TOK_MINUS;
-				break;
-				case '+':
-				tok->typ = TOK_PLUS;
-				break;
-				case '*':
-				tok->typ = TOK_STAR;
-				break;
-				case '/':
-				tok->typ = TOK_SLASH;
-				break;
-				case '%':
-				tok->typ = TOK_PERCENT;
-				break;
-				case '&':
-				tok->typ = TOK_AMP;
-				break;
-				case '|':
-				tok->typ = TOK_PIPE;
-				break;
-				case '^':
-				tok->typ = TOK_CARET;
-				break;
-				case '(':
-			  tok->typ = TOK_LPAR;
-				break;
-				case ')':
-				tok->typ = TOK_RPAR;
-				break;
-				default:
-				tok->typ = TOK_UNDEF;
-				printf("Invalid character %d\n", c);
-				break;
-		}
+		// switch(c)
+		// {
+			// case ':':
+			//   tok->typ = TOK_COLON;
+			// 	break;
+			// 	case ';':
+			// 	tok->typ = TOK_SEMI;
+			// 	break;
+			// 	case ',':
+			// 	tok->typ = TOK_COMMA;
+			// 	break;
+			// 	case '-':
+			// 	tok->typ = TOK_MINUS;
+			// 	break;
+			// 	case '+':
+			// 	tok->typ = TOK_PLUS;
+			// 	break;
+			// 	case '*':
+			// 	tok->typ = TOK_STAR;
+			// 	break;
+			// 	case '/':
+		// 		tok->typ = TOK_SLASH;
+		// 		break;
+		// 		case '%':
+		// 		tok->typ = TOK_PERCENT;
+		// 		break;
+		// 		case '&':
+		// 		tok->typ = TOK_AMP;
+		// 		break;
+		// 		case '|':
+		// 		tok->typ = TOK_PIPE;
+		// 		break;
+		// 		case '^':
+		// 		tok->typ = TOK_CARET;
+		// 		break;
+		// 		case '(':
+		// 	  tok->typ = TOK_LPAR;
+		// 		break;
+		// 		case ')':
+		// 		tok->typ = TOK_RPAR;
+		// 		break;
+		// 		default:
+		// 		tok->typ = TOK_UNDEF;
+		// 		printf("Invalid character %d\n", c);
+		// 		break;
+		// }
 	
 	}
 
@@ -974,12 +1039,13 @@ error_t print_st(token_t* tok)
 		do
 		{
 			rtn = expression(tok);
+			printf("print_st ready to print: stack %d\n", val_sp);
 			if(val_sp != 0)  // Something on the stack to print
 			{
 				value_t v;
-				//printf("stack before %d\n", val_sp);
+				printf("stack before %d\n", val_sp);
 				error_t e = value_pop(&v);
-				//printf("stack after %d\n", val_sp);
+				printf("stack after %d\n", val_sp);
 				switch(v.tag)
 				{
 					case TYPE_INTEGER:
@@ -1009,7 +1075,7 @@ error_t print_st(token_t* tok)
 			}
 			else
 			{
-				scan(tok);
+				// BDK scan(tok);
 				break;   /// exit the loop
 			}
 		} while (1);
@@ -1107,6 +1173,14 @@ error_t statement(token_t* tok)
 		  scan(tok);
 			rtn = end_st(tok);
 		  break;
+		case TOK_REM:
+		  printf("REM st, skipping to EOL\n");
+		  do
+			{
+				scan(tok);
+			} while (tok->typ != TOK_NL);
+			break;
+			
 		default:
 		  printf("statement: invalid token %d\n", tok->typ);
 			rtn = ERR_UNDEFINED;
@@ -1138,7 +1212,21 @@ error_t prog_line(void)
 
 	if(rtn == ERR_NONE)
 	{
-		rtn = statement(&tok);
+		do
+		{
+			rtn = statement(&tok);
+			if(tok.typ == TOK_COLON)
+			{
+				scan(&tok);
+			}
+		} while (tok.typ != TOK_NL && rtn == ERR_NONE);
+		if(tok.typ == TOK_NL)
+		{
+			scan(&tok);
+		}
+		printf("next prog line token %d\n", tok.typ);
+
+		
 	}
 
 

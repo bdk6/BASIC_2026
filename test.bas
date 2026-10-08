@@ -1,1 +1,9 @@
-10 PRINT 99, 1000; 500 a$ str$ x% y! z#
+5 REM This is a comment line
+10 PRINT 99, 1000; 500 : REM a$ str$ x% y! z#
+20 PRINT 999999 : PRINT 1000000
+30 PRINT 888888
+40 PRINT 333 * 3
+50 PRINT 569 % 100
+60 PRINT 123 / 10
+
+
