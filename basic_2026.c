@@ -63,9 +63,13 @@
 #define MAX_FILE 1000000
 
 #define SYM_LEN  32
+#define MAX_SYMS 1000
+
 
 // BASIC Data types
 typedef int32_t int_t;
+#define TRUE      ((int_t)1)
+#define FALSE     ((int_t)0)
 typedef double  float_t;
 typedef enum ERROR
 {
@@ -172,6 +176,8 @@ keyword_t keyword_list[] =
 
 #define NUM_KW sizeof(keyword_list) / sizeof(keyword_t)
 
+
+
 token_typ_t find_keyword(char* id)
 {
 	assert(id != NULL);
@@ -225,7 +231,20 @@ int val_sp = 0;
 char code[MAX_FILE];
 uint32_t code_ptr;
 uint32_t code_end;
+////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////
+// Symbol table
+////////////////////////////////////////////////////////
+typedef struct SYMBOL
+{
+	char name[SYM_LEN + 1];
+	value_t v;
+} symbol_t;
 
+symbol_t symtable[MAX_SYMS];
+
+////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////
 
 error_t string(token_t* tok);
 error_t function(token_t* tok);
@@ -438,6 +457,43 @@ error_t factor(token_t* tok)
 		case TOK_FLOAT:
 		  rtn = number(tok);
 			break;
+		case TOK_LPAR:
+		  scan(tok);
+			rtn = expression(tok);
+			if(tok->typ != TOK_RPAR)
+			{
+				//error
+				printf("FACTOR: expected ')'\n");
+				rtn = ERR_UNDEFINED;
+			}
+			else
+			{
+				scan(tok);
+			}
+			break;
+		case TOK_MINUS:
+		  scan(tok);
+			factor(tok);
+			value_t v;
+			value_pop(&v);
+			switch(v.tag)
+			{
+				case TYPE_INTEGER:
+				  v.i = -v.i;
+					break;
+				case TYPE_FLOAT:
+				  v.f = -v.f;
+					break;
+				case TYPE_STRING:
+				  printf("FACTOR: error, can't take neg of string\n");
+					rtn = ERR_UNDEFINED;
+					break;
+				default:
+				  break;
+
+			}
+			value_push(v);
+			break;
 		default:
 		  rtn = ERR_UNDEFINED;
 	}
@@ -514,6 +570,43 @@ error_t add_exp(token_t* tok)
 	// add_exp := mul_exp { ( + | -) mul_exp} .
 	error_t rtn = ERR_NONE;
 	rtn = mul_exp(tok);
+	while(tok->typ == TOK_PLUS || tok->typ == TOK_MINUS)
+	{
+		token_typ_t op = tok->typ;
+		scan(tok);
+		rtn = mul_exp(tok);
+		value_t rt;
+		value_t lt;
+		value_pop(&rt);
+		value_pop(&lt);
+		match_types(&lt, &rt);
+		switch(lt.tag)
+		{
+			case TYPE_INTEGER:
+			  if(op == TOK_PLUS)
+				{
+					lt.i += rt.i;
+				}
+				else if(op == TOK_MINUS)
+				{
+					lt.i -= rt.i;
+				}
+				break;
+			case TYPE_FLOAT:
+			  printf("MUL: float not yet supported\n");
+				break;
+			case TYPE_STRING:
+			  printf("ADD: strings not supported (yet)\n");
+
+			default:
+			  printf("ADD, unknown types\n");
+				break;
+		}
+		//lt.i = lt.i * rt.i;
+		printf("add = %d\n", lt.i);
+		value_push(lt);
+
+	}
 
 	return rtn;
 }
@@ -530,7 +623,50 @@ error_t sh_exp(token_t* tok)
 	// sh_exp := add_exp { ( << | >> ) add_exp} .
 	error_t rtn = ERR_NONE;
 	rtn = add_exp(tok);
+	while(tok->typ == TOK_SHL || tok->typ == TOK_SHR)
+	{
+		token_typ_t op = tok->typ;
+		scan(tok);
+		rtn = add_exp(tok);
+		value_t rt;
+		value_t lt;
+		value_pop(&rt);
+		value_pop(&lt);
+		if(lt.tag != TYPE_INTEGER || rt.tag != TYPE_INTEGER)
+		{
+			printf("SHIFT: Error.  Both operands must be integer.\n");
+			rtn = ERR_UNDEFINED;
+		}
+		else if(rt.i < 0)
+		{
+			printf("SHIFT: Error.  Shift amount cannot be negative.\n");
+			rtn = ERR_UNDEFINED;
+		}
+		else if(rt.i >= sizeof(lt.i) * 8)
+		{
+			printf("SHIFT: Error.  Shift size larger than integer.\n");
+			rtn = ERR_UNDEFINED;
+		}
+		else
+		{
+			// do shift
+			// if rhs is neg, undefined
+			// if rhs is >= number of bits, undefined
+			// should we do arithmetic or logical shift?
+			if(op == TOK_SHL)
+			{
+				lt.i <<= rt.i;
+			}
+			else
+			{
+				lt.i >>= rt.i;
+			}
 
+		}
+
+		printf("shift = %d\n", lt.i);
+		value_push(lt);
+	}
 	return rtn;
 }
 
@@ -544,10 +680,70 @@ error_t sh_exp(token_t* tok)
 error_t comp_exp(token_t* tok)
 {
 	// comp_exp := sh_exp { comp_op sh_exp} .
-  //   comp_op := <, >, <=, >=, <>
+  //   comp_op := <, >, <=, >=
 	error_t rtn = ERR_NONE;
 	rtn = sh_exp(tok);
 
+	while(tok->typ == TOK_LESS || tok->typ == TOK_LESS_EQUAL 
+	     || tok->typ == TOK_GREATER || tok->typ == TOK_GREATER_EQUAL)
+	{
+		token_typ_t op = tok->typ;
+		scan(tok);
+		rtn = sh_exp(tok);
+		value_t rt;
+		value_t lt;
+		value_pop(&rt);
+		value_pop(&lt);
+		match_types(&lt, &rt);
+		int_t result = FALSE;
+		switch(lt.tag)
+		{
+			case TYPE_INTEGER:
+			  printf("compare: left: %d right: %d\n", lt.i, rt.i);
+			  switch(op)
+				{
+					case TOK_LESS: 
+					  if(lt.i < rt.i) result = TRUE;
+						break;
+					case TOK_LESS_EQUAL:
+					  if(lt.i <= rt.i) result = TRUE;
+						break;
+					case TOK_GREATER:
+					  if(lt.i > rt.i) result = TRUE;
+						break;
+					case TOK_GREATER_EQUAL:
+					  if(lt.i >= rt.i) result = TRUE;
+						break;
+				}
+				break;
+			case TYPE_FLOAT:
+			  switch(op)
+				{
+					case TOK_LESS: 
+					  if(lt.f < rt.f) result = TRUE;
+						break;
+					case TOK_LESS_EQUAL:
+					  if(lt.f <= rt.f) result = TRUE;
+						break;
+					case TOK_GREATER:
+					  if(lt.f > rt.f) result = TRUE;
+						break;
+					case TOK_GREATER_EQUAL:
+					  if(lt.f >= rt.f) result = TRUE;
+						break;
+				}
+				break;
+			case TYPE_STRING:
+			  printf("Compare: strings not supported (yet)\n");
+				break;
+
+			default:
+			  printf("Compare, unknown types\n");
+				break;
+		}
+		//printf("comp = %d\n", result);
+		value_push_int(result);
+	}
 	return rtn;
 }
 
@@ -564,6 +760,54 @@ error_t eq_exp(token_t* tok)
 	error_t rtn = ERR_NONE;
 	rtn = comp_exp(tok);
 
+	while(tok->typ == TOK_EQUAL || tok->typ == TOK_NOT_EQUAL)
+	{
+		token_typ_t op = tok->typ;
+		scan(tok);
+		rtn = comp_exp(tok);
+		value_t rt;
+		value_t lt;
+		value_pop(&rt);
+		value_pop(&lt);
+		match_types(&lt, &rt);
+		int_t result = FALSE;
+		switch(lt.tag)
+		{
+			case TYPE_INTEGER:
+			  printf("equal: left: %d right: %d\n", lt.i, rt.i);
+			  switch(op)
+				{
+					case TOK_EQUAL: 
+					  if(lt.i == rt.i) result = TRUE;
+						break;
+					case TOK_NOT_EQUAL:
+					  if(lt.i != rt.i) result = TRUE;
+						break;
+				}
+				break;
+			case TYPE_FLOAT:
+			// TODO add an epsilon here?
+			  switch(op)
+				{
+					case TOK_EQUAL: 
+					  if(lt.f == rt.f) result = TRUE;
+						break;
+					case TOK_NOT_EQUAL:
+					  if(lt.f != rt.f) result = TRUE;
+						break;
+				}
+				break;
+			case TYPE_STRING:
+			  printf("EQUAL: strings not supported (yet)\n");
+				break;
+
+			default:
+			  printf("Equal, unknown types\n");
+				break;
+		}
+		//printf("equal = %d\n", result);
+		value_push_int(result);
+	}
 	return rtn;
 }
 
@@ -1282,18 +1526,48 @@ int load_file(char* name)
   return rtn;
 
 }
+
 /////////////////////////////////////////////////////////////////
-/// main
+/// @fn init
+/// @brief Get everything ready to run
+/// @return 0 on success, error code otherwise
+/////////////////////////////////////////////////////////////////
+error_t init(void)
+{
+	error_t rtn = ERR_NONE;
+
+	// clear symtable
+	symbol_t empty;
+	for(int i = 0; i < MAX_SYMS; i++)
+	{
+		symtable[i] = empty;
+
+	}
+
+
+	return rtn;
+}
+/////////////////////////////////////////////////////////////////
+/// @fn main
+/// @brief entry point of program
+/// @param[in] argc Number of arguments passed to program
+/// @param[in] argv String table of arguments
+/// @return 0 on success, error code otherwise
 /////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
 	printf("\nWelcome to BASIC 2026\n");
 	printf("Copyright 2026 William R Cooke\n\n");
 
+	init();
 	int load_status = load_file("test.bas");
 	if(! load_status)
 	{
 		program();
 	}
+	printf("\n all done!\n");
+	int x = 5;
+	x = x<<3<<2;
+	printf("x=%d\n", x);
 	return 0;
 }
