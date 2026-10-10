@@ -54,7 +54,7 @@
 // sh_exp := add_exp { ( << | >> ) add_exp} .
 // add_exp := mul_exp { ( + | -) mul_exp} .
 // mul_exp := factor { (* | / | %) factor} .
-// factor := number | ref | function | ( exp ) | - factor .
+// factor := number | ref | function | ( exp ) | - factor | ~factor.
 // number := integer | float .
 // ref var [ ( dimlist) ] .
 // function := 
@@ -235,9 +235,23 @@ uint32_t code_end;
 ////////////////////////////////////////////////////////
 // Symbol table
 ////////////////////////////////////////////////////////
+
+typedef enum SYMBOL_TYPE
+{
+	SYM_UNDEFINED = 0,
+	SYM_INTEGER,
+	SYM_FLOAT,
+	SYM_STRING,
+	SYM_INTEGER_ARRAY,
+	SYM_FLOAT_ARRAY,
+	SYM_STRING_ARRAY
+} symbol_type_t;
+
+
 typedef struct SYMBOL
 {
 	char name[SYM_LEN + 1];
+	symbol_type_t typ;
 	value_t v;
 } symbol_t;
 
@@ -264,6 +278,79 @@ error_t or_exp(token_t* tok);
 error_t expression(token_t* tok);
 
 error_t scan(token_t* tok);
+
+int sym_next_free = 0;
+
+/////////////////////////////////////////////////////////////////
+/// @fn find_symbol
+/// @brief Find a symbol in symtable.
+/// @param[in] name Name to find.
+/// @return 
+/////////////////////////////////////////////////////////////////
+symbol_t* find_symbol(char* name)
+{
+	symbol_t* rtn = NULL;
+	for(int i = 0; i < sym_next_free; i++)
+	{
+		if(strcmp(name, symtable[i].name) == 0)
+		{
+			// founc it
+			rtn = & symtable[i];
+			break;
+		}
+	}
+
+	return rtn;
+}
+
+/////////////////////////////////////////////////////////////////
+/// @fn new_symbol
+/// @brief Add a new symbol to symtable.
+/// @param[in] 
+/// @return Error code
+/////////////////////////////////////////////////////////////////
+symbol_t* new_symbol(char* name)
+{
+	symbol_t* rtn = NULL;
+	rtn = find_symbol(name);
+	if(rtn == NULL)  // Not there, so create it.
+	{
+	  if(sym_next_free < MAX_SYMS - 1)
+	  {
+		  rtn = &symtable[sym_next_free];
+		  int len = strlen(name);
+		  if(len > SYM_LEN)
+		  {
+			  len = SYM_LEN;
+			
+		  }
+
+		  strncpy(symtable[sym_next_free].name, name, len);
+		  // TODO finish this
+
+	   	sym_next_free++;
+	  }
+	}
+
+
+	return rtn;
+}
+
+/////////////////////////////////////////////////////////////////
+/// @fn update_symbol
+/// @brief Update a symbol already in symbol table.
+/// @param[in] new  The symbol to update.
+/// @return Error code
+/////////////////////////////////////////////////////////////////
+symbol_t* update_symbol(symbol_t* new)
+{
+	symbol_t* rtn = NULL;
+	// First, find or create it.
+	// TODO finish me.
+
+
+	return rtn;
+}
 
 /////////////////////////////////////////////////////////////////
 /// @fn value_push
@@ -351,6 +438,27 @@ error_t value_pop(value_t* v)
 	return rtn;
 }
 
+/////////////////////////////////////////////////////////////////
+/// @fn value_peek
+/// @brief Copy, but don't remove, top of value stack
+/// @param[out] v Pointer to the value returned.
+/// @return Error code
+/////////////////////////////////////////////////////////////////
+error_t value_peek(value_t* v)
+{ //printf("peek\n");
+	assert(v != NULL);
+	error_t rtn = ERR_NONE;
+	if(val_sp < 0)
+	{
+		rtn = ERR_VALUE_STACK_UNDERFLOW;
+		v->tag = TYPE_UNDEFINED;
+	}
+	else
+	{
+    *v = value_stack[val_sp - 1];
+	}
+	return rtn;
+}
 /////////////////////////////////////////////////////////////////
 /// @fn string
 /// @brief Parse and eval a function call.
@@ -451,6 +559,8 @@ error_t factor(token_t* tok)
 { //printf("factor\n");
 	// factor := number | ref | function | ( exp ) | - factor .
 	error_t rtn = ERR_NONE;
+  value_t v;
+
 	switch(tok->typ)
 	{
 		case TOK_INT:
@@ -474,7 +584,7 @@ error_t factor(token_t* tok)
 		case TOK_MINUS:
 		  scan(tok);
 			factor(tok);
-			value_t v;
+			//value_t v;
 			value_pop(&v);
 			switch(v.tag)
 			{
@@ -494,10 +604,33 @@ error_t factor(token_t* tok)
 			}
 			value_push(v);
 			break;
+		case TOK_TILDE:
+		  scan(tok);
+			factor(tok);
+			//alue_t v;
+			value_pop(&v);
+			switch(v.tag)
+			{
+				case TYPE_INTEGER:
+				  v.i = ~v.i;
+					break;
+				case TYPE_FLOAT:
+				  printf("FACTOR: Error, can't complement a float\n");
+					break;
+				case TYPE_STRING:
+				  printf("FACTOR: error, can't complement a string\n");
+					rtn = ERR_UNDEFINED;
+					break;
+				default:
+				  break;
+
+			}
+			value_push(v);
+			break;
 		default:
 		  rtn = ERR_UNDEFINED;
 	}
-
+  
 	return rtn;
 }
 
@@ -824,6 +957,40 @@ error_t band_exp(token_t* tok)
 	error_t rtn = ERR_NONE;
 	rtn = eq_exp(tok);
 
+	while(tok->typ == TOK_AMP)
+	{
+		token_typ_t op = tok->typ;
+		scan(tok);
+		rtn = eq_exp(tok);
+		value_t rt;
+		value_t lt;
+		value_pop(&rt);
+		value_pop(&lt);
+		match_types(&lt, &rt);
+		int_t result = FALSE;
+		switch(lt.tag)
+		{
+			case TYPE_INTEGER:
+			  printf("Bitwise AND: left: %d right: %d\n", lt.i, rt.i);
+				result = lt.i & rt.i;
+				break;
+			case TYPE_FLOAT:
+			  rtn = ERR_UNDEFINED;
+				printf("Bitwise AND: float not supported\n");
+				break;
+			case TYPE_STRING:
+			  rtn = ERR_UNDEFINED;
+			  printf("EQUAL: strings not supported (yet)\n");
+				break;
+			default:
+			  printf("Equal, unknown types\n");
+				rtn = ERR_UNDEFINED;
+				break;
+		}
+		//printf("band = %d\n", result);
+		value_push_int(result);
+	}
+
 	return rtn;
 }
 
@@ -839,6 +1006,40 @@ error_t bxor_exp(token_t* tok)
 	// bxor_exp := band_exp { ^ band_exp} .
 	error_t rtn = ERR_NONE;
 	rtn = band_exp(tok);
+
+	while(tok->typ == TOK_CARET)
+	{
+		token_typ_t op = tok->typ;
+		scan(tok);
+		rtn = band_exp(tok);
+		value_t rt;
+		value_t lt;
+		value_pop(&rt);
+		value_pop(&lt);
+		match_types(&lt, &rt);
+		int_t result = FALSE;
+		switch(lt.tag)
+		{
+			case TYPE_INTEGER:
+			  printf("Bitwise XOR: left: %d right: %d\n", lt.i, rt.i);
+				result = lt.i ^ rt.i;
+				break;
+			case TYPE_FLOAT:
+			  rtn = ERR_UNDEFINED;
+				printf("Bitwise XOR: float not supported\n");
+				break;
+			case TYPE_STRING:
+			  rtn = ERR_UNDEFINED;
+			  printf("Bitwise XOR: strings not supported (yet)\n");
+				break;
+			default:
+			  printf("Bitwise XOR, unknown types\n");
+				rtn = ERR_UNDEFINED;
+				break;
+		}
+		//printf("xor = %d\n", result);
+		value_push_int(result);
+	}
 
 	return rtn;
 }
@@ -856,9 +1057,78 @@ error_t bor_exp(token_t* tok)
 	error_t rtn = ERR_NONE;
 	rtn = bxor_exp(tok);
 
+	while(tok->typ == TOK_PIPE)
+	{
+		token_typ_t op = tok->typ;
+		scan(tok);
+		rtn = bxor_exp(tok);
+		value_t rt;
+		value_t lt;
+		value_pop(&rt);
+		value_pop(&lt);
+		match_types(&lt, &rt);
+		int_t result = FALSE;
+		switch(lt.tag)
+		{
+			case TYPE_INTEGER:
+			  printf("Bitwise OR: left: %d right: %d\n", lt.i, rt.i);
+				result = lt.i | rt.i;
+				break;
+			case TYPE_FLOAT:
+			  rtn = ERR_UNDEFINED;
+				printf("Bitwise OR: float not supported\n");
+				break;
+			case TYPE_STRING:
+			  rtn = ERR_UNDEFINED;
+			  printf("Bitwise OR: strings not supported (yet)\n");
+				break;
+			default:
+			  printf("Bitwise OR, unknown types\n");
+				rtn = ERR_UNDEFINED;
+				break;
+		}
+		//printf("xor = %d\n", result);
+		value_push_int(result);
+	}
+
 	return rtn;
 }
 
+/////////////////////////////////////////////////////////////////
+/// @fn value_is_false
+/// @brief Check if a value is "false"(0, empty string, etc)
+/// @param[in] v Pointer to he value to check
+/// @return TRUE if value is false, FALSE if value is not false.
+/////////////////////////////////////////////////////////////////
+int_t value_is_false(value_t* v)
+{
+	int_t rtn = FALSE;
+	switch(v->tag)
+	{
+		case TYPE_INTEGER:
+		  if(v->i == 0)
+			{
+				rtn = TRUE;
+			}
+			break;
+		case TYPE_FLOAT:
+		  if(v->f == 0.0)
+			{
+				rtn = TRUE;
+			}
+			break;
+		case TYPE_STRING:
+		  // TODO add string checking
+			rtn = TRUE;
+			break;
+		default:
+		  rtn = TRUE;
+			printf("is_value_false: unknown type\n");
+			break;
+	}
+
+	return rtn;
+}
 
 /////////////////////////////////////////////////////////////////
 /// @fn and_exp
@@ -871,6 +1141,22 @@ error_t and_exp(token_t* tok)
 	// and_exp := bor_exp {AND bor_exp}
 	error_t rtn = ERR_NONE;
 	rtn = bor_exp(tok);
+	// BDK 
+	return rtn;
+
+	// TODO: rewrite this
+	value_t v;
+	rtn = value_pop(&v);
+	int_t result = value_is_false(&v);
+	while( tok->typ == TOK_AND)
+	{
+		scan(tok);
+		rtn = bor_exp(tok);
+		value_peek(&v);
+		result &= value_is_false(&v);
+
+	}
+	value_push_int(result);
 
 	return rtn;
 }
@@ -1171,7 +1457,41 @@ int label(token_t tok)
 /////////////////////////////////////////////////////////////////
 error_t let_st(token_t* tok)
 {
+	// LET ref = exp 
 	error_t rtn = ERR_NONE;
+
+	//token_t id;
+	//scan(&id);
+	if(tok->typ == TOK_IDENT)
+	{
+		printf("LET scanned a name of %s\n", tok->str);
+	}
+	else if(tok->typ == TOK_LET)
+	{
+		scan(tok);
+	}
+	scan(tok);
+	if(tok->typ != TOK_EQUAL)
+	{
+		printf("LET_ST: Error, expected '='\n");
+
+	}
+	scan(tok);
+	rtn = expression(tok);
+	printf("Assigning to var: ");
+	value_t v;
+	value_pop(&v);
+	switch(v.tag)
+	{
+		case TYPE_INTEGER:
+		  printf("%d\n", v.i);
+			break;
+		case TYPE_FLOAT:
+		  printf("%f\n", v.f);
+		case TYPE_STRING:
+		  printf("%s\n", v.s);
+			break;
+	}
 
 	return rtn;
 }
@@ -1373,9 +1693,12 @@ error_t statement(token_t* tok)
 	switch(tok->typ)
 	{
 		case TOK_LET:
-		  scan(tok);
+		  scan(tok);     // falls through
 			rtn = let_st(tok);
-		  break;
+			break;
+		case TOK_IDENT:  // Missing optional "LET"
+		  rtn = let_st(tok);
+			break;
 		case TOK_IF:
 		  scan(tok);
 			rtn = if_st(tok);
@@ -1538,6 +1861,7 @@ error_t init(void)
 
 	// clear symtable
 	symbol_t empty;
+	empty.typ = SYM_UNDEFINED;
 	for(int i = 0; i < MAX_SYMS; i++)
 	{
 		symtable[i] = empty;
