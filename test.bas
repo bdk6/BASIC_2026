@@ -22,6 +22,14 @@
 210 PRINT ~ 2
 220 print 999
 230 LET varname$ = 3 * 4
+240 LET i% = 99
+250 LET f# = 101
+255 REM for x = 1 to 99 step 3
+260 print i% - 9
+270 print i% = 99
+280 if i% = 99 THEN
+290 if i% < 99 THEN
+300 if i% > 99 THEN
 
 
 

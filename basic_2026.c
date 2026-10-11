@@ -310,26 +310,80 @@ symbol_t* find_symbol(char* name)
 /// @return Error code
 /////////////////////////////////////////////////////////////////
 symbol_t* new_symbol(char* name)
-{
+{ printf("NEW_SYM: Adding symbol %s\n", name);
 	symbol_t* rtn = NULL;
+	int len = strlen(name);
+	if(len > SYM_LEN)
+	{
+		printf("NEW_SYMBOL: Error, name too long: <%s>\n", name);
+		len = SYM_LEN;
+	}
+	char type_char = name[len-1];
+	printf("NEW_SYM: type char = %c\n", type_char);
+
 	rtn = find_symbol(name);
 	if(rtn == NULL)  // Not there, so create it.
 	{
 	  if(sym_next_free < MAX_SYMS - 1)
 	  {
 		  rtn = &symtable[sym_next_free];
-		  int len = strlen(name);
-		  if(len > SYM_LEN)
-		  {
-			  len = SYM_LEN;
-			
-		  }
-
 		  strncpy(symtable[sym_next_free].name, name, len);
+			symtable[sym_next_free].name[len] = 0;
 		  // TODO finish this
+
+			switch(type_char)
+			{
+				case '%':
+				  rtn->typ = TYPE_INTEGER;
+					rtn->v.i = 0;
+					break;
+				case '#':
+				  rtn->typ = TYPE_FLOAT;
+					rtn->v.f = 0.0;
+					break;
+				case '$':
+				  rtn->typ = TYPE_STRING;
+					rtn->v.s = NULL;
+					break;
+			}
 
 	   	sym_next_free++;
 	  }
+		else
+		{
+			printf("NEW_SYMBOL: Error, symbol table is full\n");
+		}
+	}
+	else // already there
+	{
+		// check types
+		switch(type_char)
+		{
+			case '%':
+			  if(rtn->typ != TYPE_INTEGER)
+				{
+					printf("NEW_SYMBOL: Error, type mismatch\n");
+				}
+				break;
+			case '#':
+			  if(rtn->typ != TYPE_FLOAT)
+				{
+					printf("NEW_SYMBOL: Error, type mismatch\n");
+				}
+				break;
+			case '$':
+			  if(rtn->typ != TYPE_STRING)
+				{
+					printf("NEW_SYMBOL: Error, type mismatch\n");
+				}
+				break;
+			default:  // should be a float if no type char
+			  if(rtn->typ != TYPE_FLOAT)
+				{
+					printf("NEW_SYMBOL: Error, type mismatch\n");
+				}
+				break;
+		}
 	}
 
 
@@ -351,6 +405,39 @@ symbol_t* update_symbol(symbol_t* new)
 
 	return rtn;
 }
+
+/////////////////////////////////////////////////////////////////
+/// @fn print_symtable
+/// @brief Prints out the entire used symbol table
+/// @return None
+/////////////////////////////////////////////////////////////////
+void print_symtable(void)
+{
+
+	for(int i = 0; i < sym_next_free; i++)
+	{
+		symbol_t* s = &symtable[i];
+		printf("%03d: ", i);
+		switch(s->typ)
+		{
+			case TYPE_INTEGER:
+			  printf("INT  %8d  %s\n", s->v.i, s->name);
+				break;
+			case TYPE_FLOAT:
+			  printf("FLT %4.4f  %s\n", s->v.f, s->name);
+				break;
+			case TYPE_STRING:
+			  printf("STR xxxxxxxx  %s\n", s->name);
+				break;
+			default:
+			  printf("UNK typ:%d %s\n", s->typ, s->name);
+				break;
+		}
+
+	}
+
+}
+
 
 /////////////////////////////////////////////////////////////////
 /// @fn value_push
@@ -508,9 +595,30 @@ error_t function(token_t* tok)
 /// @return Error code
 /////////////////////////////////////////////////////////////////
 error_t ref(token_t* tok)
-{
+{  printf("REF:  %s", tok->str);
 	// ref var [ ( dimlist) ] .
 	error_t rtn = ERR_NONE;
+
+	if(tok->typ != TOK_IDENT)
+	{
+		printf("REF: Error, expected identifier here.\n");
+		rtn = ERR_UNDEFINED;
+	}
+	else
+	{
+		symbol_t* sym = find_symbol(tok->str);
+		if(sym == NULL)
+		{
+			printf("REF: Error.  Undefined symbol\n");
+			rtn = ERR_UNDEFINED;
+		}
+		// TODO:  check if it is an array.
+		else
+		{  printf("REF found a value, pushing\n");
+			value_push(sym->v);
+		}
+	}
+	scan(tok);
 
 	return rtn;
 }
@@ -566,6 +674,9 @@ error_t factor(token_t* tok)
 		case TOK_INT:
 		case TOK_FLOAT:
 		  rtn = number(tok);
+			break;
+		case TOK_IDENT:
+		  rtn = ref(tok);
 			break;
 		case TOK_LPAR:
 		  scan(tok);
@@ -1462,13 +1573,23 @@ error_t let_st(token_t* tok)
 
 	//token_t id;
 	//scan(&id);
+	symbol_t* what;
+	if(tok->typ == TOK_LET)
+	{
+		scan(tok);
+	}
 	if(tok->typ == TOK_IDENT)
 	{
 		printf("LET scanned a name of %s\n", tok->str);
+		what = new_symbol(tok->str);
+		if(what == NULL)
+		{
+			printf("LET_ST: Error, symbol not defined\n");
+		}
 	}
-	else if(tok->typ == TOK_LET)
+	else 
 	{
-		scan(tok);
+		printf("LET_ST: Error, expected an identifier instead of $d", tok->typ);
 	}
 	scan(tok);
 	if(tok->typ != TOK_EQUAL)
@@ -1481,6 +1602,28 @@ error_t let_st(token_t* tok)
 	printf("Assigning to var: ");
 	value_t v;
 	value_pop(&v);
+	if(what->typ != v.tag)
+	{
+		printf("LET_ST: Error, type not compatible\n");
+	}
+	else
+	{
+		switch(what->typ)
+		{
+			case TYPE_INTEGER:
+			  what->v.i = v.i;
+				break;
+			case TYPE_FLOAT:
+			  what->v.f = v.f;
+				break;
+			case TYPE_STRING:
+			  printf("LET_ST: Error, strings not supported yet\n");
+				break;
+			default:
+			  printf("LET_ST: Error, unknown type %d\n", what->typ);
+				break;
+		}
+	}
 	switch(v.tag)
 	{
 		case TYPE_INTEGER:
@@ -1504,7 +1647,45 @@ error_t let_st(token_t* tok)
 /////////////////////////////////////////////////////////////////
 error_t if_st(token_t* tok)
 {
+// TODO: make this recursive for embedded IF statement
 	error_t rtn = ERR_NONE;
+
+	rtn = expression(tok);
+	// check for zero
+	value_t v;
+	value_pop(&v);
+	int_t is_zero = FALSE;
+	switch(v.tag)
+	{
+		case TYPE_INTEGER:
+		  if(v.i == 0) is_zero = TRUE;
+			break;
+		case TYPE_FLOAT:
+		  // TODO: epsilon?
+			if(v.f == 0.0) is_zero = TRUE;
+			break;
+		case TYPE_STRING:
+		  // TODO fix this
+			if(v.s == NULL) is_zero = TRUE;
+			// check for zero length
+			break;
+		default:
+		  printf("IF_ST Invalid type\n");
+			is_zero = TRUE;
+			break;
+	}
+	printf("IF_ST exp retun is %s\n", is_zero? "FALSE":"TRUE");
+
+	if(tok->typ != TOK_THEN)
+	{
+		printf("IF_ST: expected 'THEN'\n");
+		rtn = ERR_UNDEFINED;
+	}
+	else
+	{
+		scan(tok);
+	}
+
 
 	return rtn;
 }
@@ -1890,8 +2071,9 @@ int main(int argc, char* argv[])
 		program();
 	}
 	printf("\n all done!\n");
-	int x = 5;
-	x = x<<3<<2;
-	printf("x=%d\n", x);
+
+	printf("Symbol Table:\n\n");
+	print_symtable();
+
 	return 0;
 }
