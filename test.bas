@@ -27,9 +27,10 @@
 255 REM for x = 1 to 99 step 3
 260 print i% - 9
 270 print i% = 99
-280 if i% = 99 THEN
-290 if i% < 99 THEN
-300 if i% > 99 THEN
-
+280 if i% = 99 THEN PRINT i%, 11111
+305 let i% = 0
+310 print i%
+315 let i% = i% + 1
+320 if 5 = 6 then goto 310
 
 

@@ -3,7 +3,7 @@ wrc
 
 program := prog_line { prog_line} EOF.
 prog_line := [label] statement { : statement } newline.
-label := 
+label := integer | @letter{idchar}
 statement := let_st |
              if_st |
 						 goto_st |

@@ -230,7 +230,7 @@ int val_sp = 0;
 
 char code[MAX_FILE];
 uint32_t code_ptr;
-uint32_t code_end;
+uint32_t code_end;  // Points to null at end of code text.
 ////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////
 // Symbol table
@@ -278,6 +278,71 @@ error_t or_exp(token_t* tok);
 error_t expression(token_t* tok);
 
 error_t scan(token_t* tok);
+
+error_t statement(token_t* tok);
+
+/////////////////////////////////////////////////////////////////
+/// @fn find_label
+/// @brief Find a named label in the code
+/// @param[in] lbl The label we want.
+/// @return Position of label in the code, or -1 if not found
+/////////////////////////////////////////////////////////////////
+int_t find_label(char* lbl)
+{ //printf("find_label:  Looking for label %s\n", lbl);
+	int_t rtn = -1;
+	// TODO: Keep a table of all the labels we've seen already.
+	
+	int_t loc = 0;
+	// start keeping track of where each line starts
+	int_t this_line = loc;
+  do
+	{ //printf("This line: %d rtn: %d loc: %d\n", this_line, rtn, loc);
+		/* code */
+			// do a line
+	// skip whitespace
+	while(loc < code_end && isblank(code[loc]))
+	{
+		loc++;
+	}
+	if(loc < code_end && isdigit(code[loc]))  // or char is "@"
+	{
+		// should be a label (int or @ccc)
+		int_t label_start = loc;
+		int_t count = 0;
+		char l[SYM_LEN];
+		do
+		{
+			l[count++] = code[loc++];
+		} while (isdigit(code[loc]) && count < SYM_LEN);
+		l[count] = 0;
+		// TODO add this one to label table
+		if(strncmp(lbl, l, count) == 0)
+		{
+			// found it!
+			//printf("find_label: found label %s at %d first char is %02x\n", 
+			//	lbl, loc, code[this_line]);
+			rtn = this_line;
+		}
+		else
+		{
+			// skip to end of line
+			while(code[loc] != '\n' && code[loc] != '\r' && loc < code_end)
+			{
+				loc++;
+			}
+			while( (code[loc] =='\n' || code[loc] == '\r') && loc < code_end)
+			{
+				loc++;
+			}
+			this_line = loc;
+		}
+	}
+	} while (loc < code_end && rtn < 0);
+	
+
+  printf("find_label is returning %d\n", rtn);
+	return rtn;
+}
 
 int sym_next_free = 0;
 
@@ -1654,27 +1719,27 @@ error_t if_st(token_t* tok)
 	// check for zero
 	value_t v;
 	value_pop(&v);
-	int_t is_zero = FALSE;
+	int_t is_true = TRUE;
 	switch(v.tag)
 	{
 		case TYPE_INTEGER:
-		  if(v.i == 0) is_zero = TRUE;
+		  if(v.i == 0) is_true = FALSE;
 			break;
 		case TYPE_FLOAT:
 		  // TODO: epsilon?
-			if(v.f == 0.0) is_zero = TRUE;
+			if(v.f == 0.0) is_true = FALSE;
 			break;
 		case TYPE_STRING:
 		  // TODO fix this
-			if(v.s == NULL) is_zero = TRUE;
+			if(v.s == NULL) is_true = FALSE;
 			// check for zero length
 			break;
 		default:
 		  printf("IF_ST Invalid type\n");
-			is_zero = TRUE;
+			is_true = FALSE;
 			break;
 	}
-	printf("IF_ST exp retun is %s\n", is_zero? "FALSE":"TRUE");
+	printf("IF_ST exp retun is %s\n", is_true? "FALSE":"TRUE");
 
 	if(tok->typ != TOK_THEN)
 	{
@@ -1684,6 +1749,14 @@ error_t if_st(token_t* tok)
 	else
 	{
 		scan(tok);
+		if(is_true)
+		{
+			statement(tok);
+		}
+		else
+		{
+			// skip to eol 
+		}
 	}
 
 
@@ -1698,8 +1771,24 @@ error_t if_st(token_t* tok)
 /////////////////////////////////////////////////////////////////
 error_t goto_st(token_t* tok)
 {
+	// GOTO label
 	error_t rtn = ERR_NONE;
 
+	printf("GOTO_ST: jumping to label %s\n", tok->str);
+	int_t dest = find_label(tok->str);
+	if(dest < 0) 
+	{
+		printf("GOTO_ST: Could not find label %s\n", tok->str);
+	}
+	else
+	{
+		printf("GOTO_ST Found label %s: going there now!\n", tok->str);
+		//scan(tok);
+		tok->typ = TOK_NL; // simulate getting an EOL
+		code_ptr = dest;
+	}
+
+	//scan(tok);
 	return rtn;
 }
 
@@ -1934,7 +2023,7 @@ error_t statement(token_t* tok)
 			rtn = ERR_UNDEFINED;
 		  break;
 	}
-
+printf("Statement:  returning with tok type %d\n", tok->typ);
 	return rtn;
 }
 
@@ -1953,6 +2042,7 @@ error_t prog_line(void)
 	if(tok.typ == TOK_INT)
 	{
 		// rtn = label();
+		printf("PROG_LINE got label %s\n", tok.str);
 		scan(&tok);
 	}
 
