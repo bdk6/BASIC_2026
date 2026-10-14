@@ -31,6 +31,8 @@
 305 let i% = 0
 310 print i%
 315 let i% = i% + 1
-320 if 5 = 6 then goto 310
-
+320 if i% < 10 then goto 310
+330 print 1234567
+350 print 9876543
+360 for x = 1 to 5 step 2
 

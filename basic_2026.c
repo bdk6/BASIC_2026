@@ -64,7 +64,9 @@
 
 #define SYM_LEN  32
 #define MAX_SYMS 1000
-
+#define MAX_VALUE_STACK  64
+#define MAX_FOR_STACK    64
+#define MAX_GOSUB_STACK  64
 
 // BASIC Data types
 typedef int32_t int_t;
@@ -178,6 +180,7 @@ keyword_t keyword_list[] =
 
 
 
+
 token_typ_t find_keyword(char* id)
 {
 	assert(id != NULL);
@@ -224,9 +227,38 @@ typedef struct VALUE
 	
 } value_t;
 
-#define MAX_VALUE_STACK  64
+/////////////////////////////////////////////////////////////////////
+/// @type for_record
+/// @brief Keeps track of a FOR statement.
+/////////////////////////////////////////////////////////////////////
+typedef struct FOR_RECORD
+{
+	// TODO:  what do we need to keep track of?
+	value_t* ref;   // The controlled variable
+	value_t  start; // Starting value  -- TODO do we need this?
+	value_t  end;   // Ending value
+	value_t  step;  // Increment / decrement
+	int_t    loop_address;  // Where to go back to
+
+} for_record_t;
+
+/////////////////////////////////////////////////////////////////////
+/// @type jgosub_record
+/// @brief Keeps track of a GOSUB statement.
+/////////////////////////////////////////////////////////////////////
+typedef struct GOSUB_RECORD
+{
+	// TODO:  what do we need to keep track of?
+
+	int_t    return_address;  // Where to go back to
+
+} gosub_record_t;
+
+
 value_t value_stack[MAX_VALUE_STACK];
 int val_sp = 0;
+int for_sp = 0;
+int gosub_sp = 0;
 
 char code[MAX_FILE];
 uint32_t code_ptr;
@@ -256,7 +288,8 @@ typedef struct SYMBOL
 } symbol_t;
 
 symbol_t symtable[MAX_SYMS];
-
+for_record_t for_stack[MAX_FOR_STACK];
+gosub_record_t  gosub_stack[MAX_GOSUB_STACK];
 ////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////
 
@@ -394,7 +427,7 @@ symbol_t* new_symbol(char* name)
 		  rtn = &symtable[sym_next_free];
 		  strncpy(symtable[sym_next_free].name, name, len);
 			symtable[sym_next_free].name[len] = 0;
-		  // TODO finish this
+		  // TODO anything else?
 
 			switch(type_char)
 			{
@@ -1739,7 +1772,7 @@ error_t if_st(token_t* tok)
 			is_true = FALSE;
 			break;
 	}
-	printf("IF_ST exp retun is %s\n", is_true? "FALSE":"TRUE");
+	printf("IF_ST exp retun is %s %d\n", is_true? "TRUE":"FALSE",is_true);
 
 	if(tok->typ != TOK_THEN)
 	{
@@ -1756,6 +1789,10 @@ error_t if_st(token_t* tok)
 		else
 		{
 			// skip to eol 
+			while(tok->typ != TOK_NL && tok->typ != TOK_EOF)
+			{
+				scan(tok);
+			}
 		}
 	}
 
@@ -1828,6 +1865,24 @@ error_t for_st(token_t* tok)
 {
 	error_t rtn = ERR_NONE;
 
+	if(tok->typ != TOK_IDENT)
+	{
+		rtn = ERR_UNDEFINED;
+	}
+	else
+	{
+		symbol_t* var = new_symbol(tok->str);
+		
+		rtn = scan(tok);
+	}
+
+	do
+	{
+		printf("FOR_ST tok = %d\n", tok->typ);
+		rtn = scan(tok);
+	} while (tok->typ != TOK_NL && tok->typ != TOK_EOF);
+	
+
 	return rtn;
 }
 
@@ -1873,13 +1928,13 @@ error_t print_st(token_t* tok)
 		do
 		{
 			rtn = expression(tok);
-			printf("print_st ready to print: stack %d\n", val_sp);
+			//printf("print_st ready to print: stack %d\n", val_sp);
 			if(val_sp != 0)  // Something on the stack to print
 			{
 				value_t v;
-				printf("stack before %d\n", val_sp);
+				//printf("stack before %d\n", val_sp);
 				error_t e = value_pop(&v);
-				printf("stack after %d\n", val_sp);
+				//printf("stack after %d\n", val_sp);
 				switch(v.tag)
 				{
 					case TYPE_INTEGER:
@@ -2008,7 +2063,8 @@ error_t statement(token_t* tok)
 		  break;
 		case TOK_END:
 		  scan(tok);
-			rtn = end_st(tok);
+			//rtn = end_st(tok);
+			tok->typ = TOK_EOF;
 		  break;
 		case TOK_REM:
 		  printf("REM st, skipping to EOL\n");
@@ -2019,11 +2075,11 @@ error_t statement(token_t* tok)
 			break;
 			
 		default:
-		  printf("statement: invalid token %d\n", tok->typ);
+		  //printf("statement: invalid token %d\n", tok->typ);
 			rtn = ERR_UNDEFINED;
 		  break;
 	}
-printf("Statement:  returning with tok type %d\n", tok->typ);
+//printf("Statement:  returning with tok type %d\n", tok->typ);
 	return rtn;
 }
 
@@ -2062,13 +2118,13 @@ error_t prog_line(void)
 		{
 			scan(&tok);
 		}
-		printf("next prog line token %d\n", tok.typ);
+		//printf("next prog line token %d\n", tok.typ);
 
 		
 	}
 
 
-  printf("prog line rtn = %d\n", rtn);
+  //printf("prog line rtn = %d\n", rtn);
 	return rtn;
 }
 
